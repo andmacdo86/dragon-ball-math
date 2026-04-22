@@ -1,0 +1,26 @@
+{
+  "short_name": "DB Math",
+  "name": "Dragon Ball Matemática",
+  "description": "Aprenda matemática com os guerreiros do Dragon Ball!",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#FF6B00",
+  "background_color": "#0a0010",
+  "categories": ["education", "games"],
+  "lang": "pt-BR"
+}
