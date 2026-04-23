@@ -1,10 +1,10 @@
 {
   "files": {
-    "main.js": "/dragon-ball-math/static/js/main.694616de.js",
+    "main.js": "/dragon-ball-math/static/js/main.c2dc36ae.js",
     "index.html": "/dragon-ball-math/index.html",
-    "main.694616de.js.map": "/dragon-ball-math/static/js/main.694616de.js.map"
+    "main.c2dc36ae.js.map": "/dragon-ball-math/static/js/main.c2dc36ae.js.map"
   },
   "entrypoints": [
-    "static/js/main.694616de.js"
+    "static/js/main.c2dc36ae.js"
   ]
 }
