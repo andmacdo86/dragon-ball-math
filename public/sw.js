@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dbmath-v1';
+const CACHE_NAME = 'dbmath-v3';
 const ASSETS = [
   '/',
   '/index.html',
