@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback, useRef } from "react";
 
 // ── Dragon Ball SVG ──────────────────────────────────────────────────────────
 const DragonBallSVG = ({ stars = 1, size = 48, glow = false }) => {
@@ -141,14 +141,13 @@ const MODES = [
   { id:"misto",         label:"Desafio Final", icon:"🐉", ball:7, desc:"Tudo junto!" },
 ];
 
-// ── Ordem das fases para progressão de nível ─────────────────────────────────
-const PHASE_ORDER = ["soma", "subtracao", "multiplicacao", "misto"];
-
 // ── Difficulty levels ────────────────────────────────────────────────────────
+// level 1: small numbers  |  level 2: medium  |  level 3: large / harder tabuada
 function getLevelConfig(level) {
-  if (level <= 1)  return { somaMax:20,  subMax:20,  multMax:5,  label:"Nível 1 - Treinamento",    icon:"🥋" };
-  if (level <= 2)  return { somaMax:50,  subMax:40,  multMax:7,  label:"Nível 2 - Guerreiro",      icon:"⚔️" };
-  if (level <= 3)  return { somaMax:100, subMax:80,  multMax:9,  label:"Nível 3 - Super Saiyajin", icon:"⚡" };
+  // level is 1-based
+  if (level <= 2)  return { somaMax:20,  subMax:20,  multMax:5,  label:"Nível 1 - Treinamento",    icon:"🥋" };
+  if (level <= 4)  return { somaMax:50,  subMax:40,  multMax:7,  label:"Nível 2 - Guerreiro",      icon:"⚔️" };
+  if (level <= 6)  return { somaMax:100, subMax:80,  multMax:9,  label:"Nível 3 - Super Saiyajin", icon:"⚡" };
   return             { somaMax:200, subMax:150, multMax:10, label:"Nível 4 - Lendário!",       icon:"🐉" };
 }
 
@@ -174,6 +173,7 @@ function generateQuestion(mode, level) {
     answer = a * b; symbol = "×";
   }
 
+  // Generate 3 wrong options that are plausible but distinct
   const opts = new Set([answer]);
   let attempts = 0;
   while (opts.size < 4 && attempts < 50) {
@@ -186,7 +186,7 @@ function generateQuestion(mode, level) {
   return {
     a, b, symbol, answer,
     options: [...opts].sort(() => Math.random() - 0.5),
-    key: Date.now() + Math.random(),
+    key: Date.now() + Math.random(), // unique key forces React to remount option buttons
   };
 }
 
@@ -200,7 +200,7 @@ const CORRECT = [
   "FORÇA MÁXIMA! Acertou em cheio! 🔥",
 ];
 const WRONG = [
-  "Não desista! Mesmo Goku treinou muito! 💪",
+  "Não desista! Até Goku treinou muito! 💪",
   "Tente de novo, guerreiro! Você consegue! 🐉",
   "Cada erro te deixa mais forte! Continue! ⚡",
   "Krillin nunca desistiu — e você também não vai! 😄",
@@ -208,10 +208,11 @@ const WRONG = [
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [screen,  setScreen]  = useState("select");
+  const [screen,  setScreen]  = useState("select"); // select|home|game|result
   const [character, setCharacter] = useState(null);
   const [mode,    setMode]    = useState(null);
 
+  // game state
   const [question,  setQuestion]  = useState(null);
   const [score,     setScore]     = useState(0);
   const [total,     setTotal]     = useState(0);
@@ -220,11 +221,15 @@ export default function App() {
   const [ki,        setKi]        = useState(0);
   const [balls,     setBalls]     = useState(0);
   const [qLeft,     setQLeft]     = useState(10);
-  const [level,     setLevel]     = useState(1);
 
-  const [selected,  setSelected]  = useState(null);
-  const [locked,    setLocked]    = useState(false);
-  const [feedback,  setFeedback]  = useState(null);
+  // level system: increases every 2 correct rounds (persistent across games)
+  const [level,     setLevel]     = useState(1);
+  const [roundsWon, setRoundsWon] = useState(0); // tracks wins for leveling
+
+  // UI state
+  const [selected,  setSelected]  = useState(null); // the option value the user clicked
+  const [locked,    setLocked]    = useState(false); // prevent double-click
+  const [feedback,  setFeedback]  = useState(null);  // null | "correct" | "wrong"
   const [feedbackMsg, setFeedbackMsg] = useState("");
   const [shaking,   setShaking]   = useState(false);
   const [kiFlash,   setKiFlash]   = useState(false);
@@ -243,21 +248,23 @@ export default function App() {
     setTimeout(()=>setParticles([]),900);
   };
 
-  const startGame = (m) => {
-    // nível baseado na fase: soma=1, subtração=2, tabuada=3, desafio=4
-    const phaseLevel = PHASE_ORDER.indexOf(m) + 1;
-    setLevel(phaseLevel);
-    setMode(m);
-    setScore(0); setTotal(0); setStreak(0);
-    setKi(0); setBalls(0); setQLeft(10);
-    setSelected(null); setLocked(false); setFeedback(null);
-    setKiFlash(false); setParticles([]); setLevelUpMsg(null);
-    setQuestion(generateQuestion(m, phaseLevel));
-    setScreen("game");
-  };
+  const PHASE_ORDER = ["soma", "subtracao", "multiplicacao", "misto"];
+
+const startGame = (m) => {
+  setMode(m);
+  setScore(0); setTotal(0); setStreak(0);
+  setKi(0); setBalls(0); setQLeft(10);
+  setSelected(null); setLocked(false); setFeedback(null);
+  setKiFlash(false); setParticles([]); setLevelUpMsg(null);
+  // nível baseado na fase: soma=1, subtração=2, tabuada=3, desafio=4
+  const phaseLevel = PHASE_ORDER.indexOf(m) + 1;
+  setLevel(phaseLevel);
+  setQuestion(generateQuestion(m, phaseLevel));
+  setScreen("game");
+};
 
   const handleAnswer = (opt) => {
-    if (locked) return;
+    if (locked) return;          // ← BUG FIX: block any input while transitioning
     setLocked(true);
     setSelected(opt);
 
@@ -289,11 +296,9 @@ export default function App() {
 
     const remaining = qLeft - 1;
     if (remaining === 0) {
-      // fim da rodada — mostra resultado depois de 2s para ler o feedback
       setTimeout(() => setScreen("result"), 2000);
     } else {
       setQLeft(remaining);
-      // aguarda 2s para o aluno ler o feedback, depois troca a pergunta
       setTimeout(() => {
         setSelected(null);
         setFeedback(null);
@@ -302,7 +307,6 @@ export default function App() {
         setLocked(false);
       }, 2000);
     }
-  };
 
   // ── CSS ──────────────────────────────────────────────────────────────────
   const css = `
@@ -332,6 +336,7 @@ export default function App() {
       padding: 12px; position: relative; overflow: hidden;
     }
 
+    /* ── background ── */
     .bg { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
     .bg-star { position: absolute; border-radius: 50%; background: white; animation: twinkle 3s infinite; }
     .aura-ring { position: absolute; border-radius: 50%; border: 1px solid rgba(255,165,0,0.07); animation: expand 4s ease-out infinite; }
@@ -347,6 +352,7 @@ export default function App() {
     @keyframes glowPulse{ 0%,100%{box-shadow:0 0 20px rgba(255,165,0,0.3)} 50%{box-shadow:0 0 40px rgba(255,165,0,0.7),0 0 80px rgba(255,100,0,0.3)} }
     @keyframes levelUp { 0%{transform:scale(0.5) translateY(20px);opacity:0} 50%{transform:scale(1.1);opacity:1} 80%{transform:scale(1);opacity:1} 100%{transform:scale(1) translateY(-10px);opacity:0} }
 
+    /* ── card ── */
     .card {
       background: var(--card);
       backdrop-filter: blur(20px);
@@ -358,6 +364,7 @@ export default function App() {
       animation: slideUp 0.4s ease;
     }
 
+    /* ── typography — Exo 2 for titles ── */
     .t-title {
       font-family: 'Exo 2', sans-serif;
       font-weight: 900;
@@ -365,6 +372,7 @@ export default function App() {
     }
     .t-body { font-family: 'Nunito', sans-serif; }
 
+    /* ── SELECT ── */
     .sel-title { font-size: 1.9rem; color: var(--gold); text-align: center; text-shadow: 0 0 20px rgba(255,200,0,0.5); margin-bottom: 4px; }
     .sel-sub   { color: rgba(255,255,255,0.55); text-align:center; font-size:0.88rem; margin-bottom:18px; }
     .char-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:16px; }
@@ -380,6 +388,7 @@ export default function App() {
     .char-title { font-size:0.62rem; color:rgba(255,255,255,0.5); font-weight:700; text-align:center; }
     .char-power { font-size:0.6rem; font-weight:900; padding:2px 7px; border-radius:999px; color:white; }
 
+    /* ── HOME ── */
     .home-head  { display:flex; flex-direction:column; align-items:center; margin-bottom:18px; }
     .home-char  { animation:float 3s ease-in-out infinite; }
     .home-title { font-size:2.2rem; color:var(--gold); text-shadow:0 0 20px rgba(255,200,0,0.5); text-align:center; }
@@ -405,6 +414,7 @@ export default function App() {
     .divider    { border:none; border-top:1px solid rgba(255,200,50,0.1); margin:12px 0; }
     .best-row   { display:flex; justify-content:center; margin:6px 0; }
 
+    /* ── GAME ── */
     .back-btn {
       position:absolute; top:14px; left:14px;
       background:rgba(255,255,255,0.07); border:1px solid rgba(255,200,50,0.2);
@@ -439,6 +449,7 @@ export default function App() {
       letter-spacing:1px; margin-bottom:10px;
     }
 
+    /* question */
     .q-card  {
       background:rgba(0,0,0,0.3); border-radius:20px;
       border:1.5px solid rgba(255,200,50,0.18);
@@ -454,6 +465,8 @@ export default function App() {
     .particles { position:absolute; inset:0; pointer-events:none; }
     .particle  { position:absolute; left:50%; top:50%; font-size:1.2rem; animation:particle 0.9s forwards; }
 
+    /* options — key insight: we use data-state so the class is driven by React state,
+       not by any residual DOM class from the previous question */
     .opts-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
     .opt {
       border:2px solid rgba(255,200,50,0.2); border-radius:16px;
@@ -474,6 +487,7 @@ export default function App() {
     .feedback.correct { background:rgba(0,220,100,0.15); color:#90ffc8; border:1.5px solid #00dc64; }
     .feedback.wrong   { background:rgba(255,50,50,0.15);  color:#ffaaaa; border:1.5px solid #ff3232; }
 
+    /* level up toast */
     .levelup-toast {
       position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
       background:linear-gradient(135deg,#FF6B00,#FFD700);
@@ -483,12 +497,14 @@ export default function App() {
       box-shadow:0 0 40px rgba(255,200,0,0.6);
     }
 
+    /* ── RESULT ── */
     .res-char   { display:flex; justify-content:center; margin-bottom:8px; animation:float 2s ease-in-out infinite; }
     .res-title  { font-size:1.8rem; color:var(--gold); text-align:center; text-shadow:0 0 20px rgba(255,200,0,0.5); margin-bottom:4px; }
     .res-score  { font-family:'Exo 2',sans-serif; font-weight:900; font-size:3.8rem; color:white; text-align:center; text-shadow:0 0 30px rgba(255,200,0,0.4); margin:8px 0; letter-spacing:3px; }
     .res-balls  { display:flex; justify-content:center; gap:7px; margin-bottom:12px; }
     .res-msg    { color:rgba(255,255,255,0.7); text-align:center; font-size:0.92rem; margin-bottom:18px; line-height:1.5; }
 
+    /* ── buttons ── */
     .btn-main {
       width:100%; padding:14px; border:none; border-radius:16px;
       font-family:'Exo 2',sans-serif; font-weight:900; font-size:1.2rem; letter-spacing:1px;
@@ -510,26 +526,13 @@ export default function App() {
       border-radius:999px; padding:4px 12px;
       font-weight:900; font-size:0.82rem; color:#1a1a2e;
     }
-
-    .next-phase-btn {
-      width:100%; padding:14px; border:none; border-radius:16px;
-      font-family:'Exo 2',sans-serif; font-weight:900; font-size:1.1rem; letter-spacing:1px;
-      cursor:pointer; background:linear-gradient(135deg,#00aa44,#00ff88);
-      color:#0a0010; box-shadow:0 6px 24px rgba(0,200,100,0.4);
-      transition:transform 0.15s, box-shadow 0.15s; margin-bottom:10px;
-    }
-    .next-phase-btn:hover { transform:translateY(-3px); box-shadow:0 12px 32px rgba(0,200,100,0.5); }
   `;
 
+  // static bg elements (avoid re-render jitter by keeping them outside state)
   const bgStars = Array.from({length:25},(_,i)=>({
     id:i, x:((i*37+13)%100), y:((i*53+7)%100), d:(i%3)+2
   }));
   const auraRings = [0,1,2,3].map(i=>({ id:i, size:100+i*80, delay:i }));
-
-  const currentPhaseIndex = PHASE_ORDER.indexOf(mode);
-  const hasNextPhase = currentPhaseIndex >= 0 && currentPhaseIndex < PHASE_ORDER.length - 1;
-  const nextPhaseId = hasNextPhase ? PHASE_ORDER[currentPhaseIndex + 1] : null;
-  const nextPhaseLabel = nextPhaseId ? MODES.find(m => m.id === nextPhaseId)?.label : null;
 
   return (
     <>
@@ -640,6 +643,7 @@ export default function App() {
 
             <div className="level-tag">{cfg.icon} {cfg.label}</div>
 
+            {/* Question — key on question.key so React fully remounts */}
             <div key={question.key} className={`q-card${shaking?" shake":""}`}>
               <div className="q-hint">QUAL É A RESPOSTA?</div>
               <div className="q-text">{question.a} {question.symbol} {question.b} = ?</div>
@@ -655,6 +659,7 @@ export default function App() {
               )}
             </div>
 
+            {/* Options — data-state drives visual; no class mutation needed */}
             <div className="opts-grid">
               {question.options.map((opt,i)=>{
                 let state = "idle";
@@ -704,11 +709,6 @@ export default function App() {
               <div style={{textAlign:"center",marginBottom:14}}>
                 <span className="streak-badge">🔥 Melhor sequência: {bestStreak} seguidos!</span>
               </div>
-            )}
-            {hasNextPhase && (
-              <button className="next-phase-btn" onClick={()=>startGame(nextPhaseId)}>
-                ⚡ PRÓXIMA FASE: {nextPhaseLabel}!
-              </button>
             )}
             <button className="btn-main" onClick={()=>startGame(mode)}>🔄 BATALHAR DE NOVO!</button>
             <button className="btn-sec"  onClick={()=>setScreen("home")}>🏠 MENU PRINCIPAL</button>
